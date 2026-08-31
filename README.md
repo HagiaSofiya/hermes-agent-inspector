@@ -10,22 +10,17 @@ happening and debuggable afterward.
 
 ### Live tab
 
-<video src="docs/videos/agent-inspector-live-start.mov" controls width="720"></video>
+[Watch the live run start](docs/videos/agent-inspector-live-start.mov).
+The timeline picks up model and tool events as they stream in.
 
-A live run starting, with the timeline picking up model and tool events as
-they stream in.
-
-<video src="docs/videos/agent-inspector-live-end.mov" controls width="720"></video>
-
-The same run after it finishes, clicking through the timeline, metrics, and
-Tool Inspector to explore what happened.
+[Watch the finished run](docs/videos/agent-inspector-live-end.mov).
+This is the same run after it finishes, clicking through the timeline,
+metrics, and Tool Inspector.
 
 ### History tab
 
-<video src="docs/videos/agent-inspector-history.mov" controls width="720"></video>
-
-A historical run, showing persisted timeline events, metrics, tool details,
-and debugging context.
+[Watch a historical run](docs/videos/agent-inspector-history.mov).
+The persisted timeline, metrics, tool details, and debugging context.
 
 ## Why
 
