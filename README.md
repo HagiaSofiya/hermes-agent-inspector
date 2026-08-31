@@ -10,16 +10,19 @@ happening and debuggable afterward.
 
 ### Live tab
 
-[Watch the live run start](docs/videos/agent-inspector-live-start.mov).
+https://github.com/user-attachments/assets/645476c6-a668-4319-905c-4e7cc292d2f4
+
 The timeline picks up model and tool events as they stream in.
 
-[Watch the finished run](docs/videos/agent-inspector-live-end.mov).
+https://github.com/user-attachments/assets/3472223f-5c3b-40cb-a231-629c3e28c357
+
 This is the same run after it finishes, clicking through the timeline,
 metrics, and Tool Inspector.
 
 ### History tab
 
-[Watch a historical run](docs/videos/agent-inspector-history.mov).
+https://github.com/user-attachments/assets/7663db18-4236-417c-9639-336642b7a189
+
 The persisted timeline, metrics, tool details, and debugging context.
 
 ## Why
@@ -47,7 +50,7 @@ inside the environment where Hermes development already happens.
 
 ```mermaid
 flowchart LR
-    G[Hermes gateway event stream<br/>host.onEvent('*')] --> N[src/trace/normalizer.ts<br/>TypeScript normalization]
+    G["Hermes gateway event stream<br/>host.onEvent('*')"] --> N[src/trace/normalizer.ts<br/>TypeScript normalization]
     N --> T[TraceEvent domain model]
     T --> L[Live React UI<br/>timeline · metrics · Tool Inspector]
     T --> C[src/trace/runs.ts<br/>completed-run boundary]
