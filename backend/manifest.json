@@ -1,0 +1,7 @@
+{
+  "name": "agent-inspector",
+  "label": "Agent Inspector",
+  "description": "Historical Agent Inspector run persistence.",
+  "version": "0.1.0",
+  "api": "plugin_api.py"
+}

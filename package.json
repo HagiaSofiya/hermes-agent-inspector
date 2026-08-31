@@ -1,0 +1,20 @@
+{
+  "name": "hermes-agent-inspector",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/build.mjs --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:python": "python3 -m unittest discover -s tests/python -p 'test_*.py'",
+    "seed:demo": "node scripts/seed-demo.mjs",
+    "install:local": "node scripts/install-local.mjs"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.17",
+    "esbuild": "0.28.1",
+    "typescript": "6.0.3",
+    "vitest": "4.1.10"
+  }
+}
