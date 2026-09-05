@@ -2,7 +2,7 @@ import { Badge, SegmentedControl, Separator, StatusDot, host, useValue } from '@
 import { useEffect, useMemo, useState } from 'react'
 
 import { loadRun, loadRuns, type PersistedRun, type PluginRest, type RunSummary } from '../api/runs'
-import { RunHistory, type RunHistoryState } from './RunHistory'
+import { RunHistory, type HistoryFilter, type RunHistoryState } from './RunHistory'
 import { ToolInspector } from './ToolInspector'
 import { TraceMetricsSummary } from './TraceMetricsSummary'
 import { TimelineFilter, TraceTimeline } from './TraceTimeline'
@@ -44,6 +44,7 @@ export function AgentInspectorPage({ rest }: { rest: PluginRest }) {
   const [mode, setMode] = useState<InspectorMode>('live')
   const [historyRuns, setHistoryRuns] = useState<RunSummary[]>([])
   const [historyState, setHistoryState] = useState<RunHistoryState>('loading')
+  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all')
   const [historyError, setHistoryError] = useState('')
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const [historicalRun, setHistoricalRun] = useState<PersistedRun | null>(null)
@@ -167,7 +168,15 @@ export function AgentInspectorPage({ rest }: { rest: PluginRest }) {
       </section>
       <Separator />
       {mode === 'history' ? (
-        <RunHistory runs={historyRuns} state={historyState} error={historyError} selectedRunId={selectedRunId} onSelect={selectRun} />
+        <RunHistory
+          runs={historyRuns}
+          state={historyState}
+          error={historyError}
+          filter={historyFilter}
+          selectedRunId={selectedRunId}
+          onFilterChange={setHistoryFilter}
+          onSelect={selectRun}
+        />
       ) : null}
       <TraceMetricsSummary metrics={metrics} />
       <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 overflow-hidden lg:grid-cols-[minmax(0,1fr)_25rem]">
