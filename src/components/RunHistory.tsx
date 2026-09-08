@@ -1,4 +1,4 @@
-import { Badge, EmptyState, ErrorState, ScrollArea, SegmentedControl, Skeleton } from '@hermes/plugin-sdk'
+import { Badge, EmptyState, ErrorState, SegmentedControl, Skeleton } from '@hermes/plugin-sdk'
 
 import type { RunSummary } from '../api/runs'
 import { displaySessionId, formatMetricDuration, formatTime, runGroupLabel } from '../utils/formatting'
@@ -87,7 +87,7 @@ export function RunHistory({ runs, state, error, filter, selectedRunId, onFilter
           <Skeleton className="h-20 w-full" />
         </div>
       ) : visibleRuns.length ? (
-        <ScrollArea className="max-h-44 rounded-md border border-(--ui-stroke-secondary) bg-background/20 p-2">
+        <div className="overflow-y-auto rounded-md border border-(--ui-stroke-secondary) bg-background/20 p-2" style={{ maxHeight: '13rem' }}>
           <div className="grid gap-3">
             {groups.map(group => (
               <div className="grid gap-1.5" key={group.label}>
@@ -98,7 +98,7 @@ export function RunHistory({ runs, state, error, filter, selectedRunId, onFilter
                       aria-label={`Open run ${displaySessionId(run.sessionId)}`}
                       aria-pressed={run.runId === selectedRunId}
                       className={
-                        'min-w-0 rounded-md border px-2.5 py-2 text-left transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 ' +
+                        'h-20 min-w-0 overflow-hidden rounded-md border px-2.5 py-2 text-left transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 ' +
                         (run.runId === selectedRunId
                           ? 'border-primary/50 bg-primary/[0.055]'
                           : 'border-transparent hover:border-(--ui-stroke-secondary) hover:bg-(--ui-bg-tertiary)')
@@ -125,7 +125,7 @@ export function RunHistory({ runs, state, error, filter, selectedRunId, onFilter
               </div>
             ))}
           </div>
-        </ScrollArea>
+        </div>
       ) : runs.length ? (
         <div className="rounded-md border border-(--ui-stroke-secondary) bg-background/20 p-4">
           <EmptyState title="No matching runs" description="Try a different filter." />

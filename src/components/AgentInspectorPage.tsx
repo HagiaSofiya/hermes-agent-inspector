@@ -1,5 +1,5 @@
 import { Badge, SegmentedControl, Separator, StatusDot, host, useValue } from '@hermes/plugin-sdk'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { loadRun, loadRuns, type PersistedRun, type PluginRest, type RunSummary } from '../api/runs'
 import { RunHistory, type HistoryFilter, type RunHistoryState } from './RunHistory'
@@ -50,6 +50,7 @@ export function AgentInspectorPage({ rest }: { rest: PluginRest }) {
   const [historicalRun, setHistoricalRun] = useState<PersistedRun | null>(null)
   const [historicalRunState, setHistoricalRunState] = useState<'idle' | 'loading' | 'error'>('idle')
   const [historicalRunError, setHistoricalRunError] = useState('')
+  const selectRunRequestRef = useRef(0)
 
   useEffect(() => {
     return subscribeTraceStore((nextEvents, error) => {
@@ -88,18 +89,28 @@ export function AgentInspectorPage({ rest }: { rest: PluginRest }) {
   }, [mode, rest])
 
   const selectRun = (runId: string) => {
+    const requestId = ++selectRunRequestRef.current
     setSelectedRunId(runId)
-    setHistoricalRun(null)
+    // Keep the previously loaded run's events on screen while the new run
+    // fetches, instead of nulling historicalRun. Nulling it caused the
+    // timeline to flash to its loading skeleton and back on every run
+    // switch, even ones that resolve almost instantly.
     setHistoricalRunState('loading')
     setHistoricalRunError('')
     setSelectedEventId(null)
 
     void loadRun(rest, runId)
       .then(run => {
+        if (selectRunRequestRef.current !== requestId) {
+          return
+        }
         setHistoricalRun(run)
         setHistoricalRunState('idle')
       })
       .catch(error => {
+        if (selectRunRequestRef.current !== requestId) {
+          return
+        }
         setHistoricalRunError(error instanceof Error ? error.message : 'Unable to load this run')
         setHistoricalRunState('error')
       })
@@ -123,33 +134,48 @@ export function AgentInspectorPage({ rest }: { rest: PluginRest }) {
   const selectedTool = events.find(event => event.id === selectedEventId && (event.category === 'tool' || Boolean(event.toolName))) || null
   const metrics = useMemo(() => deriveTraceMetrics(events), [events])
   const liveStatus = statusFor(gateway, busy, awaitingResponse)
-  const shownSessionId = mode === 'history' ? historicalRun?.sessionId || null : focusedSessionId || activeSessionId
-  const shownModel = mode === 'history' ? historicalRun?.model || 'Not recorded' : model || 'Not reported'
+  // Read session id/model/status from the already-loaded run summary rather than
+  // the async historicalRun fetch, so selecting a run shows its metadata instantly
+  // instead of flickering through "Select a run"/"Not recorded" while it loads.
+  const selectedRunSummary = (selectedRunId && historyRuns.find(run => run.runId === selectedRunId)) || null
+  const shownSessionId = mode === 'history' ? selectedRunSummary?.sessionId || null : focusedSessionId || activeSessionId
+  const shownModel = mode === 'history' ? selectedRunSummary?.model || 'Not recorded' : model || 'Not reported'
   const shownStatus =
-    mode === 'history' && historicalRun
-      ? historicalRun.status === 'error'
+    mode === 'history' && selectedRunSummary
+      ? selectedRunSummary.status === 'error'
         ? { label: 'failed', tone: 'bad' as const }
         : { label: 'completed', tone: 'good' as const }
       : liveStatus
-  const timelineState = mode === 'history' ? (historicalRunState === 'loading' ? 'loading' : historicalRunState === 'error' ? 'error' : 'ready') : listenerState
+  // Only show the loading skeleton when there is no run data at all yet.
+  // Once a run has loaded, keep showing its (possibly stale, about-to-be-
+  // replaced) events during a subsequent switch rather than blanking the
+  // timeline back to a skeleton for a run that resolves almost instantly.
+  const timelineState =
+    mode === 'history'
+      ? historicalRunState === 'loading' && !historicalRun
+        ? 'loading'
+        : historicalRunState === 'error'
+          ? 'error'
+          : 'ready'
+      : listenerState
   const timelineError = mode === 'history' && historicalRunState === 'error' ? historicalRunError : listenerError
 
   return (
     <main className="flex h-full min-h-0 flex-col gap-5 p-5">
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0 space-y-1">
-          <p className="text-[0.62rem] font-medium uppercase tracking-[0.16em] text-(--ui-text-tertiary)">Developer surface</p>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">Agent Inspector</h1>
-          <p className="max-w-xl text-sm text-(--ui-text-secondary)">{mode === 'live' ? 'Live execution timeline for the focused Hermes session.' : 'Browse completed Hermes execution traces.'}</p>
+      <header className="flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1 space-y-1">
+          <p className="truncate text-[0.62rem] font-medium uppercase tracking-[0.16em] text-(--ui-text-tertiary)">Developer surface</p>
+          <h1 className="truncate text-xl font-semibold tracking-tight text-foreground">Agent Inspector</h1>
+          <p className="max-w-xl truncate text-sm text-(--ui-text-secondary)">{mode === 'live' ? 'Live execution timeline for the focused Hermes session.' : 'Browse completed Hermes execution traces.'}</p>
         </div>
-        <div className="flex items-center gap-3">
-          <SegmentedControl options={MODE_OPTIONS} value={mode} onChange={selectedMode} />
+        <div className="flex shrink-0 items-center gap-3">
           <div className="flex items-center gap-2 text-xs text-(--ui-text-secondary)">
+            <span className="min-w-[4ch] font-mono tabular-nums">{events.length} events</span>
+            <span className="text-(--ui-text-quaternary)">·</span>
             <StatusDot tone={shownStatus.tone} />
             <span>{shownStatus.label}</span>
-            <span className="text-(--ui-text-quaternary)">·</span>
-            <span className="font-mono tabular-nums">{events.length} events</span>
           </div>
+          <SegmentedControl options={MODE_OPTIONS} value={mode} onChange={selectedMode} />
         </div>
       </header>
       <section aria-label="Current session details" className="grid gap-2 sm:grid-cols-3">
