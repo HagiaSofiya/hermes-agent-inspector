@@ -15,7 +15,7 @@ await mkdir(dirname(desktopDestination), { recursive: true })
 await mkdir(dashboardDestination, { recursive: true })
 await copyFile('dist/plugin.js', desktopDestination)
 
-for (const file of ['manifest.json', 'plugin_api.py', 'db.py', 'models.py']) {
+for (const file of ['manifest.json', 'plugin_api.py', 'db.py', 'models.py', 'pricing.py']) {
   await copyFile(join('backend', file), join(dashboardDestination, file))
 }
 

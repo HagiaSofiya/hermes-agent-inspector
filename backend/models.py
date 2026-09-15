@@ -40,6 +40,17 @@ class RunSummary(BaseModel):
     runtimeMs: int | float | None = Field(default=None, ge=0)
     toolCallCount: int = Field(ge=0)
     failedToolCount: int = Field(ge=0)
+    # Token accounting. The prompt/completion/total trio is this run's own
+    # consumption; sessionTotalTokens is the lifetime total of its session.
+    # All optional: usage ticks are interval-emitted, so a short run has none,
+    # and runs recorded before this feature have none either.
+    promptTokens: int | None = Field(default=None, ge=0)
+    completionTokens: int | None = Field(default=None, ge=0)
+    totalTokens: int | None = Field(default=None, ge=0)
+    sessionTotalTokens: int | None = Field(default=None, ge=0)
+    apiCalls: int | None = Field(default=None, ge=0)
+    contextPercent: int | None = Field(default=None, ge=0, le=100)
+    costUsd: float | None = Field(default=None, ge=0)
 
 
 class CreateRunPayload(RunSummary):
@@ -48,6 +59,15 @@ class CreateRunPayload(RunSummary):
 
 class PersistedRun(RunSummary):
     events: list[TraceEventModel] = Field(min_length=1)
+
+
+class ModelPricing(BaseModel):
+    """USD per million tokens, as published by the models.dev catalogue."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    inputPerMillion: float = Field(ge=0)
+    outputPerMillion: float = Field(ge=0)
 
 
 def model_dump_json_ready(model: BaseModel) -> dict[str, Any]:

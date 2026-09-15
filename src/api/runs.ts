@@ -3,6 +3,7 @@ import type { PluginRestOptions } from '@hermes/plugin-sdk'
 import { deriveTraceMetrics } from '../trace/metrics'
 import type { CompletedTraceRun } from '../trace/runs'
 import type { TraceEvent } from '../trace/types'
+import type { UsageSnapshot } from '../trace/usage'
 import { toJsonSafe } from '../utils/serialization'
 
 export type RunStatus = 'success' | 'error'
@@ -17,6 +18,15 @@ export interface RunSummary {
   runtimeMs: number | null
   toolCallCount: number
   failedToolCount: number
+  // Token accounting. Null on runs recorded before these were captured, and on
+  // runs too short to have produced a usage tick.
+  promptTokens?: number | null
+  completionTokens?: number | null
+  totalTokens?: number | null
+  sessionTotalTokens?: number | null
+  apiCalls?: number | null
+  contextPercent?: number | null
+  costUsd?: number | null
 }
 
 export interface PersistedRun extends RunSummary {
@@ -36,8 +46,8 @@ function jsonSafeEvent(event: TraceEvent): TraceEvent {
   }
 }
 
-export function createRunPayload(run: CompletedTraceRun): CreateRunPayload {
-  const metrics = deriveTraceMetrics(run.events)
+export function createRunPayload(run: CompletedTraceRun, costUsd: number | null = null): CreateRunPayload {
+  const metrics = deriveTraceMetrics(run.events, run.usage)
 
   return {
     runId: run.runId,
@@ -49,7 +59,39 @@ export function createRunPayload(run: CompletedTraceRun): CreateRunPayload {
     runtimeMs: metrics.totalExecutionDurationMs,
     toolCallCount: metrics.totalToolCalls,
     failedToolCount: metrics.failedToolCalls,
+    promptTokens: run.usage?.promptTokens ?? null,
+    completionTokens: run.usage?.completionTokens ?? null,
+    totalTokens: run.usage?.totalTokens ?? null,
+    sessionTotalTokens: run.sessionUsage?.totalTokens ?? null,
+    apiCalls: run.usage?.calls ?? null,
+    contextPercent: run.sessionUsage?.contextPercent ?? null,
+    costUsd,
     events: run.events.map(jsonSafeEvent)
+  }
+}
+
+/**
+ * Rebuild a run's token figures from its stored summary.
+ *
+ * History cannot re-derive these from the run's events: the counters are
+ * session-cumulative and the baseline they must be differenced against
+ * predates the run, so it was never part of the run's own event list.
+ */
+export function usageFromSummary(summary: RunSummary | null | undefined): UsageSnapshot | null {
+  if (!summary || summary.totalTokens === null || summary.totalTokens === undefined) {
+    return null
+  }
+
+  return {
+    model: summary.model,
+    promptTokens: summary.promptTokens ?? 0,
+    completionTokens: summary.completionTokens ?? 0,
+    totalTokens: summary.totalTokens,
+    reasoningTokens: null,
+    calls: summary.apiCalls ?? 0,
+    contextUsed: null,
+    contextMax: null,
+    contextPercent: summary.contextPercent ?? null
   }
 }
 

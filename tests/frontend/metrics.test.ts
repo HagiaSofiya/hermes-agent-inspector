@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { deriveTraceMetrics } from '../src/trace/metrics'
-import type { TraceEvent } from '../src/trace/types'
+import { deriveTraceMetrics } from '../../src/trace/metrics'
+import type { TraceEvent } from '../../src/trace/types'
 
 function event(overrides: Partial<TraceEvent>): TraceEvent {
   return {
@@ -28,7 +28,8 @@ describe('deriveTraceMetrics', () => {
       averageToolDurationMs: null,
       slowestTool: null,
       modelGenerationDurationMs: null,
-      isActive: false
+      isActive: false,
+      usage: null
     })
   })
 

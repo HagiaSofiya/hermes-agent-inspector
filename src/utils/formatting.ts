@@ -28,6 +28,40 @@ export function formatMetricDuration(durationMs: number | null | undefined): str
   return durationMs === null || durationMs === undefined ? '—' : formatDuration(durationMs)
 }
 
+export function formatTokens(tokens: number | null | undefined): string {
+  if (tokens === null || tokens === undefined) {
+    return '—'
+  }
+
+  if (tokens < 1_000) {
+    return String(Math.round(tokens))
+  }
+
+  if (tokens < 1_000_000) {
+    return (tokens / 1_000).toFixed(1).replace(/\.0$/, '') + 'k'
+  }
+
+  return (tokens / 1_000_000).toFixed(2).replace(/\.?0+$/, '') + 'M'
+}
+
+export function formatCost(costUsd: number | null | undefined): string {
+  if (costUsd === null || costUsd === undefined) {
+    return '—'
+  }
+
+  if (costUsd === 0) {
+    return '$0.00'
+  }
+
+  // Agent runs are routinely worth a fraction of a cent. Rounding those to
+  // '$0.00' would read as free rather than as cheap.
+  if (costUsd < 0.0001) {
+    return '<$0.0001'
+  }
+
+  return '$' + costUsd.toFixed(costUsd < 0.01 ? 4 : 2)
+}
+
 export function statusLabel(status: TraceStatus): string {
   return status === 'pending' ? 'Running' : status === 'error' ? 'Error' : 'Success'
 }

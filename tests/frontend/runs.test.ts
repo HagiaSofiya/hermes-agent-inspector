@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
-import { createRunPayload } from '../src/api/runs'
-import { applyRunBatch, createTraceRunCollector } from '../src/trace/runs'
-import type { NormalizedBatchItem } from '../src/trace/types'
+import { createRunPayload } from '../../src/api/runs'
+import { applyRunBatch, createTraceRunCollector, currentRunUsage } from '../../src/trace/runs'
+import type { NormalizedBatchItem } from '../../src/trace/types'
 
 function event(overrides: Partial<NormalizedBatchItem['event']>): NormalizedBatchItem['event'] {
   return {
@@ -110,12 +110,113 @@ describe('TraceRunCollector', () => {
       completedAt: 1100,
       model: null,
       status: 'success' as const,
-      events: [event({ eventType: 'message.complete', category: 'response', output: circular, rawPayload: { circular } })]
+      events: [event({ eventType: 'message.complete', category: 'response', output: circular, rawPayload: { circular } })],
+      usage: null,
+      sessionUsage: null
     }
 
     const payload = createRunPayload(run)
 
     expect(payload.events[0]?.output).toEqual({ self: '[Circular value]' })
     expect(payload.events[0]?.rawPayload).toEqual({ circular: { self: '[Circular value]' } })
+  })
+})
+
+describe('per-run token accounting', () => {
+  function usageTick(id: string, timestamp: number, prompt: number, completion: number, calls: number) {
+    return {
+      event: event({
+        id,
+        timestamp,
+        eventType: 'session.usage',
+        rawPayload: {
+          usage: {
+            model: 'anthropic/claude-opus-5',
+            prompt,
+            completion,
+            total: prompt + completion,
+            calls,
+            context_used: prompt,
+            context_max: 524288,
+            context_percent: 4
+          }
+        }
+      })
+    }
+  }
+
+  function runTurn(
+    collector: ReturnType<typeof createTraceRunCollector>,
+    startedAt: number,
+    tick: NormalizedBatchItem
+  ) {
+    applyRunBatch(collector, [{ event: event({ id: 'turn-' + startedAt, timestamp: startedAt, eventType: 'message.start', category: 'model', status: 'pending' }) }], 'model-a')
+
+    return applyRunBatch(
+      collector,
+      [tick, { event: event({ id: 'done-' + startedAt, timestamp: startedAt + 50, eventType: 'message.complete', category: 'response' }) }],
+      'model-a'
+    )
+  }
+
+  it('measures each run separately even though Hermes reports session totals', () => {
+    const collector = createTraceRunCollector()
+
+    // Hermes counters are cumulative across the whole session, so the second
+    // run's tick already contains the first run's tokens. Reporting the raw
+    // tick would make every later run in a session look progressively larger.
+    const first = runTurn(collector, 1000, usageTick('usage-1', 1010, 20108, 111, 1))
+    const second = runTurn(collector, 2000, usageTick('usage-2', 2010, 40425, 149, 2))
+
+    expect(first?.usage?.totalTokens).toBe(20219)
+    expect(first?.usage?.calls).toBe(1)
+
+    expect(second?.usage?.totalTokens).toBe(20355)
+    expect(second?.usage?.promptTokens).toBe(20317)
+    expect(second?.usage?.calls).toBe(1)
+
+    // The session figure stays cumulative — that is what it is for.
+    expect(second?.sessionUsage?.totalTokens).toBe(40574)
+  })
+
+  it('reports no usage for a run whose ticks never arrived', () => {
+    const collector = createTraceRunCollector()
+
+    applyRunBatch(collector, [{ event: event({ id: 'turn-1', eventType: 'message.start', category: 'model', status: 'pending' }) }], 'model-a')
+    const completed = applyRunBatch(collector, [{ event: event({ id: 'done-1', eventType: 'message.complete', category: 'response' }) }], 'model-a')
+
+    expect(completed?.usage).toBeNull()
+    expect(completed?.sessionUsage).toBeNull()
+  })
+
+  it('keeps reporting the last run figure once a run has finished', () => {
+    const collector = createTraceRunCollector()
+
+    runTurn(collector, 1000, usageTick('usage-1', 1010, 20108, 111, 1))
+
+    expect(currentRunUsage(collector, 'session-1')?.totalTokens).toBe(20219)
+  })
+
+  it('tracks an in-flight run against the previous run baseline', () => {
+    const collector = createTraceRunCollector()
+
+    runTurn(collector, 1000, usageTick('usage-1', 1010, 20108, 111, 1))
+    applyRunBatch(collector, [{ event: event({ id: 'turn-2', timestamp: 2000, eventType: 'message.start', category: 'model', status: 'pending' }) }], 'model-a')
+    applyRunBatch(collector, [usageTick('usage-2', 2010, 40425, 149, 2)], 'model-a')
+
+    expect(currentRunUsage(collector, 'session-1')?.totalTokens).toBe(20355)
+  })
+
+  it('keeps a usage tick that lands between runs as the next run baseline', () => {
+    const collector = createTraceRunCollector()
+
+    runTurn(collector, 1000, usageTick('usage-1', 1010, 20108, 111, 1))
+    // A tick arriving while nothing is in flight still moves the session
+    // counters, so the next run must be measured from it.
+    applyRunBatch(collector, [usageTick('usage-idle', 1500, 30000, 120, 2)], 'model-a')
+
+    const next = runTurn(collector, 2000, usageTick('usage-2', 2010, 40425, 149, 3))
+
+    expect(next?.usage?.totalTokens).toBe(10454)
   })
 })

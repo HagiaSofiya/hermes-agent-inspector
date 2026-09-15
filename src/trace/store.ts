@@ -1,16 +1,18 @@
 import { host } from '@hermes/plugin-sdk'
 
 import { createTraceNormalizer } from './normalizer'
-import { applyRunBatch, createTraceRunCollector, type CompletedTraceRun } from './runs'
+import { applyRunBatch, createTraceRunCollector, currentRunUsage, type CompletedTraceRun } from './runs'
 import type { NormalizedBatchItem, TraceEvent } from './types'
+import type { UsageSnapshot } from './usage'
 
 export const MAX_TRACE_EVENTS = 250
 
-export type TraceStoreListener = (events: TraceEvent[], error: string) => void
+export type TraceStoreListener = (events: TraceEvent[], error: string, usage: UsageSnapshot | null) => void
 
 interface TraceStore {
   events: TraceEvent[]
   error: string
+  usage: UsageSnapshot | null
   started: boolean
   stopListening: (() => void) | null
   listeners: Set<TraceStoreListener>
@@ -21,6 +23,7 @@ interface TraceStore {
 export const traceStore: TraceStore = {
   events: [],
   error: '',
+  usage: null,
   started: false,
   stopListening: null,
   listeners: new Set(),
@@ -54,7 +57,7 @@ function currentRuntimeSessionId(): string | null {
 
 function publishTraceStore(): void {
   for (const listener of traceStore.listeners) {
-    listener(traceStore.events, traceStore.error)
+    listener(traceStore.events, traceStore.error, traceStore.usage)
   }
 }
 
@@ -74,6 +77,7 @@ export function startTraceCollection(
         const batch = traceStore.normalizer.normalize(gatewayEvent, currentRuntimeSessionId())
         traceStore.events = applyBatch(traceStore.events, batch)
         const completedRun = applyRunBatch(traceStore.runCollector, batch, readAtom(host.state.model))
+        traceStore.usage = currentRunUsage(traceStore.runCollector, currentRuntimeSessionId())
         publishTraceStore()
 
         if (completedRun && onRunCompleted) {
@@ -92,6 +96,7 @@ export function startTraceCollection(
       traceStore.stopListening = null
       traceStore.started = false
       traceStore.runCollector = createTraceRunCollector()
+      traceStore.usage = null
       traceStore.listeners.clear()
     })
   } catch (error) {
@@ -102,7 +107,7 @@ export function startTraceCollection(
 
 export function subscribeTraceStore(listener: TraceStoreListener): () => void {
   traceStore.listeners.add(listener)
-  listener(traceStore.events, traceStore.error)
+  listener(traceStore.events, traceStore.error, traceStore.usage)
 
   return () => {
     traceStore.listeners.delete(listener)

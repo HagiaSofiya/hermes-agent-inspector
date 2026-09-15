@@ -8,7 +8,8 @@ from fastapi import APIRouter, HTTPException, Query
 
 try:
     from .db import get_run, init_db, insert_run, list_run_summaries
-    from .models import CreateRunPayload, PersistedRun, RunSummary
+    from .models import CreateRunPayload, ModelPricing, PersistedRun, RunSummary
+    from .pricing import resolve_pricing
 except ImportError:  # Hermes imports plugin_api.py as a standalone module.
     def _load_sibling(module_name: str):
         qualified_name = "_agent_inspector_" + module_name
@@ -27,9 +28,12 @@ except ImportError:  # Hermes imports plugin_api.py as a standalone module.
 
     _load_sibling("models")
     db = _load_sibling("db")
+    pricing = _load_sibling("pricing")
     models = sys.modules["_agent_inspector_models"]
     get_run, init_db, insert_run, list_run_summaries = db.get_run, db.init_db, db.insert_run, db.list_run_summaries
     CreateRunPayload, PersistedRun, RunSummary = models.CreateRunPayload, models.PersistedRun, models.RunSummary
+    ModelPricing = models.ModelPricing
+    resolve_pricing = pricing.resolve_pricing
 
 router = APIRouter()
 
@@ -57,3 +61,15 @@ def run(run_id: str) -> PersistedRun:
 @router.post("/runs", response_model=PersistedRun)
 def create_run(payload: CreateRunPayload) -> PersistedRun:
     return insert_run(PersistedRun.model_validate(payload.model_dump()))
+
+
+@router.get("/pricing", response_model=ModelPricing | None)
+def pricing_for_model(model: str = Query(min_length=1, max_length=200)) -> ModelPricing | None:
+    """Token rates for a model, or null when it cannot be priced.
+
+    Null rather than 404: an unpriced model is an ordinary outcome (a local or
+    self-hosted model has no published rate), not a client error.
+    """
+    rates = resolve_pricing(model)
+
+    return ModelPricing.model_validate(rates) if rates else None

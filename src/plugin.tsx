@@ -3,6 +3,7 @@ import { jsx } from 'react/jsx-runtime'
 
 import { AgentInspectorPage } from './components/AgentInspectorPage'
 import { createRunPayload, persistRun } from './api/runs'
+import { estimateRunCost } from './utils/cost'
 import { startTraceCollection } from './trace/store'
 
 const plugin: HermesPlugin = {
@@ -11,7 +12,11 @@ const plugin: HermesPlugin = {
   description: 'Live session metadata and a normalized Hermes execution timeline for developers.',
   register(ctx) {
     startTraceCollection(ctx.onDispose, async completedRun => {
-      await persistRun(ctx.rest, createRunPayload(completedRun))
+      // Cost is resolved once here and stored with the run, so the history
+      // list can show it without loading each run's events back.
+      const costUsd = await estimateRunCost(ctx.rest, completedRun.usage, completedRun.model)
+
+      await persistRun(ctx.rest, createRunPayload(completedRun, costUsd))
     })
 
     ctx.registerMany([

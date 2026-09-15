@@ -1,4 +1,5 @@
-import type { TraceEvent, TraceMetrics } from './types'
+import type { TraceEvent, TraceMetrics, TraceUsage } from './types'
+import { latestUsageSnapshot, type UsageSnapshot } from './usage'
 
 import { numberValue } from '../utils/serialization'
 
@@ -21,7 +22,36 @@ function isTerminalExecutionEvent(event: TraceEvent): boolean {
   return event.eventType === 'message.complete' || event.eventType === 'error'
 }
 
-export function deriveTraceMetrics(events: readonly TraceEvent[]): TraceMetrics {
+function buildUsage(session: UsageSnapshot | null, run: UsageSnapshot | null): TraceUsage | null {
+  if (!session && !run) {
+    return null
+  }
+
+  return {
+    model: run?.model ?? session?.model ?? null,
+    runPromptTokens: run?.promptTokens ?? null,
+    runCompletionTokens: run?.completionTokens ?? null,
+    runTotalTokens: run?.totalTokens ?? null,
+    sessionTotalTokens: session?.totalTokens ?? null,
+    calls: run?.calls ?? session?.calls ?? null,
+    // Context occupancy is a point-in-time reading, so it always comes from
+    // the latest tick rather than the run delta.
+    contextUsed: session?.contextUsed ?? null,
+    contextMax: session?.contextMax ?? null,
+    contextPercent: session?.contextPercent ?? null
+  }
+}
+
+/**
+ * `runUsage` carries this run's own token consumption. It cannot be derived
+ * from `events` alone: the counters are session-cumulative, so the baseline
+ * needed to difference them predates the run and lives in the run collector
+ * (live) or the persisted run summary (history).
+ */
+export function deriveTraceMetrics(
+  events: readonly TraceEvent[],
+  runUsage?: UsageSnapshot | null
+): TraceMetrics {
   const finalEvents = new Map<string, TraceEvent>()
 
   for (const [index, event] of events.entries()) {
@@ -94,6 +124,7 @@ export function deriveTraceMetrics(events: readonly TraceEvent[]): TraceMetrics 
     averageToolDurationMs: completedToolDurations.length ? durationTotal / completedToolDurations.length : null,
     slowestTool,
     modelGenerationDurationMs: latestModelCompletion?.durationMs ?? null,
-    isActive
+    isActive,
+    usage: buildUsage(latestUsageSnapshot(trace), runUsage ?? null)
   }
 }

@@ -1,14 +1,16 @@
 import { Badge, SegmentedControl, Separator, StatusDot, host, useValue } from '@hermes/plugin-sdk'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { loadRun, loadRuns, type PersistedRun, type PluginRest, type RunSummary } from '../api/runs'
+import { loadRun, loadRuns, usageFromSummary, type PersistedRun, type PluginRest, type RunSummary } from '../api/runs'
 import { RunHistory, type HistoryFilter, type RunHistoryState } from './RunHistory'
 import { ToolInspector } from './ToolInspector'
 import { TraceMetricsSummary } from './TraceMetricsSummary'
 import { TimelineFilter, TraceTimeline } from './TraceTimeline'
 import { deriveTraceMetrics } from '../trace/metrics'
 import { traceStore, subscribeTraceStore } from '../trace/store'
-import type { TraceEvent } from '../trace/types'
+import type { TraceEvent, TraceUsage } from '../trace/types'
+import type { UsageSnapshot } from '../trace/usage'
+import { computeCostUsd, loadModelPricing, type ModelPricing } from '../utils/cost'
 import { displaySessionId, statusFor } from '../utils/formatting'
 
 type InspectorMode = 'live' | 'history'
@@ -17,6 +19,39 @@ const MODE_OPTIONS = [
   { id: 'live', label: 'Live' },
   { id: 'history', label: 'History' }
 ]
+
+/**
+ * Look up the token rates for whichever model the trace reports, and cost it.
+ *
+ * Pricing lives behind the backend (only it can read the models.dev cache on
+ * disk), so this resolves asynchronously and renders as a blank cost until it
+ * lands — or permanently, for a model with no published rate.
+ */
+function useEstimatedCost(rest: PluginRest, usage: TraceUsage | null): number | null {
+  const [pricing, setPricing] = useState<ModelPricing | null>(null)
+  const model = usage?.model || null
+
+  useEffect(() => {
+    if (!model) {
+      setPricing(null)
+      return
+    }
+
+    let cancelled = false
+
+    void loadModelPricing(rest, model).then(resolved => {
+      if (!cancelled) {
+        setPricing(resolved)
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [rest, model])
+
+  return computeCostUsd(usage?.runPromptTokens, usage?.runCompletionTokens, pricing)
+}
 
 function MetadataValue({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
@@ -37,6 +72,7 @@ export function AgentInspectorPage({ rest }: { rest: PluginRest }) {
   const busy = useValue(host.state.busy)
   const awaitingResponse = useValue(host.state.awaitingResponse)
   const [liveEvents, setLiveEvents] = useState<TraceEvent[]>(() => traceStore.events)
+  const [liveUsage, setLiveUsage] = useState<UsageSnapshot | null>(() => traceStore.usage)
   const [filter, setFilter] = useState<TimelineFilter>('all')
   const [listenerState, setListenerState] = useState<'loading' | 'ready' | 'error'>(() => (traceStore.started ? 'ready' : 'loading'))
   const [listenerError, setListenerError] = useState('')
@@ -53,8 +89,9 @@ export function AgentInspectorPage({ rest }: { rest: PluginRest }) {
   const selectRunRequestRef = useRef(0)
 
   useEffect(() => {
-    return subscribeTraceStore((nextEvents, error) => {
+    return subscribeTraceStore((nextEvents, error, usage) => {
       setLiveEvents(nextEvents)
+      setLiveUsage(usage)
       setListenerError(error)
       setListenerState(error ? 'error' : 'ready')
     })
@@ -132,12 +169,21 @@ export function AgentInspectorPage({ rest }: { rest: PluginRest }) {
 
   const events = mode === 'history' ? historicalRun?.events || [] : liveEvents
   const selectedTool = events.find(event => event.id === selectedEventId && (event.category === 'tool' || Boolean(event.toolName))) || null
-  const metrics = useMemo(() => deriveTraceMetrics(events), [events])
   const liveStatus = statusFor(gateway, busy, awaitingResponse)
   // Read session id/model/status from the already-loaded run summary rather than
   // the async historicalRun fetch, so selecting a run shows its metadata instantly
   // instead of flickering through "Select a run"/"Not recorded" while it loads.
   const selectedRunSummary = (selectedRunId && historyRuns.find(run => run.runId === selectedRunId)) || null
+  // A run's own token consumption is a delta against a baseline that predates
+  // the run, so it cannot be recomputed from the run's events. Live mode reads
+  // it from the collector; history reads what was stored with the run.
+  const runUsage = mode === 'history' ? usageFromSummary(selectedRunSummary) : liveUsage
+  const metrics = useMemo(() => deriveTraceMetrics(events, runUsage), [events, runUsage])
+  const estimatedCost = useEstimatedCost(rest, metrics.usage)
+  // A stored run keeps the cost it was priced at, so the metrics strip and the
+  // history card can never disagree if catalogue rates move afterwards. Runs
+  // saved before costs were recorded fall back to a fresh estimate.
+  const costUsd = mode === 'history' ? selectedRunSummary?.costUsd ?? estimatedCost : estimatedCost
   const shownSessionId = mode === 'history' ? selectedRunSummary?.sessionId || null : focusedSessionId || activeSessionId
   const shownModel = mode === 'history' ? selectedRunSummary?.model || 'Not recorded' : model || 'Not reported'
   const shownStatus =
@@ -204,7 +250,7 @@ export function AgentInspectorPage({ rest }: { rest: PluginRest }) {
           onSelect={selectRun}
         />
       ) : null}
-      <TraceMetricsSummary metrics={metrics} />
+      <TraceMetricsSummary costUsd={costUsd} metrics={metrics} />
       <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 overflow-hidden lg:grid-cols-[minmax(0,1fr)_25rem]">
         <TraceTimeline
           events={events}
