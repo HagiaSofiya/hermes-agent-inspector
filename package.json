@@ -7,7 +7,7 @@
     "dev": "node scripts/build.mjs --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "test:python": "python3 -m unittest discover -s tests/python -p 'test_*.py'",
+    "test:python": "python3 -m unittest discover -s tests/backend -p 'test_*.py'",
     "seed:demo": "node scripts/seed-demo.mjs",
     "install:local": "node scripts/install-local.mjs"
   },

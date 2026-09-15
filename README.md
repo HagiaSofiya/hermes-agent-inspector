@@ -41,6 +41,7 @@ inside the environment where Hermes development already happens.
 - Failed tool calls visible in both Tools and Errors views
 - Detailed tool input/output/raw event inspection
 - Runtime, tool, failure, latency, slowest-tool, and model-generation metrics
+- Per-run token accounting, estimated cost, and context-window occupancy
 - Historical completed-run persistence through a scoped Python API and SQLite
 - All / Model / Tools / Errors filtering
 - Polished loading, empty, and error states
@@ -144,6 +145,7 @@ backend/
   manifest.json         Hermes dashboard backend declaration
   models.py             Pydantic API/domain validation models
   plugin_api.py         FastAPI routes mounted by Hermes
+  pricing.py            Per-model token rates from the models.dev catalogue
 src/
   api/runs.ts           Typed frontend/backend transport boundary
   components/           Agent Inspector, history, timeline, metrics, tooling UI
@@ -154,12 +156,13 @@ src/
     runs.ts             Session-keyed completed-run collector
     store.ts            In-memory live trace store
     types.ts            TraceEvent, TraceMetrics, and normalization types
-  utils/                Formatting and JSON-safe serialization
+    usage.ts            session.usage parsing and per-run token deltas
+  utils/                Formatting, cost estimation, JSON-safe serialization
 types/
   hermes-plugin-sdk.d.ts Hand-maintained Hermes plugin SDK contract
 tests/
-  *.test.ts             Frontend normalization, metrics, and run tests
-  python/test_backend.py SQLite/Pydantic persistence tests
+  frontend/*.test.ts    Normalization, metrics, usage, run, and formatting tests
+  backend/test_backend.py SQLite/Pydantic persistence, migration, pricing tests
 scripts/
   build.mjs             esbuild runtime bundle
   install-local.mjs     Unified Hermes package installer
@@ -183,7 +186,7 @@ FastAPI and Pydantic are Hermes-provided dependencies:
 
 ```bash
 /path/to/hermes-agent/venv/bin/python -m unittest discover \
-  -s tests/python -p 'test_*.py'
+  -s tests/backend -p 'test_*.py'
 ```
 
 ### Installing the full plugin

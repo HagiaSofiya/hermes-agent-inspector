@@ -19,6 +19,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from backend.db import init_db, insert_run
 from backend.models import PersistedRun, TraceEventModel
 
+# A priced model, so the demo history shows a real cost rather than $0.00.
+# Rates match the models.dev catalogue entry the backend reads at runtime.
+DEMO_MODEL = "anthropic/claude-opus-5"
+INPUT_PER_MILLION = 5.0
+OUTPUT_PER_MILLION = 25.0
+CONTEXT_MAX = 524_288
+
 
 def event(
     *,
@@ -52,6 +59,50 @@ def event(
     )
 
 
+def usage_event(
+    *,
+    event_id: str,
+    timestamp: int,
+    model: str,
+    prompt: int,
+    completion: int,
+    calls: int,
+    context_used: int,
+    context_percent: int,
+) -> TraceEventModel:
+    """A session.usage tick, shaped exactly as the Hermes gateway emits one.
+
+    The counters are cumulative for the whole session, which is why the run
+    summaries below carry the per-run delta rather than these figures.
+    """
+    return event(
+        event_id=event_id,
+        timestamp=timestamp,
+        category="system",
+        event_type="session.usage",
+        title="session usage",
+        summary=f"{prompt + completion} tokens over {calls} calls",
+        status="success",
+        raw_payload={
+            "usage": {
+                "model": model,
+                "input": prompt,
+                "output": completion,
+                "reasoning": 0,
+                "prompt": prompt,
+                "completion": completion,
+                "total": prompt + completion,
+                "calls": calls,
+                "context_used": context_used,
+                "context_max": CONTEXT_MAX,
+                "context_percent": context_percent,
+                "compressions": 0,
+                "active_subagents": 0,
+            }
+        },
+    )
+
+
 def run(
     *,
     run_id: str,
@@ -63,6 +114,11 @@ def run(
     tool_call_count: int,
     failed_tool_count: int,
     events: list[TraceEventModel],
+    prompt_tokens: int,
+    completion_tokens: int,
+    session_total_tokens: int,
+    api_calls: int,
+    context_percent: int,
 ) -> PersistedRun:
     return PersistedRun(
         runId=run_id,
@@ -75,11 +131,18 @@ def run(
         toolCallCount=tool_call_count,
         failedToolCount=failed_tool_count,
         events=events,
+        promptTokens=prompt_tokens,
+        completionTokens=completion_tokens,
+        totalTokens=prompt_tokens + completion_tokens,
+        sessionTotalTokens=session_total_tokens,
+        apiCalls=api_calls,
+        contextPercent=context_percent,
+        costUsd=round(prompt_tokens / 1_000_000 * INPUT_PER_MILLION + completion_tokens / 1_000_000 * OUTPUT_PER_MILLION, 6),
     )
 
 
 def build_runs(now: int) -> list[PersistedRun]:
-    model = "upstage/solar-pro4:free"
+    model = DEMO_MODEL
 
     successful = run(
         run_id="demo-successful-run",
@@ -94,8 +157,14 @@ def build_runs(now: int) -> list[PersistedRun]:
             event(event_id="success-model", timestamp=now - 36_000, category="model", event_type="message.complete", title="Generation complete", summary="Model generation finished", status="success", raw_payload={"text": "I inspected the repository and summarized the key files."}, duration_ms=4_200, output_value="I inspected the repository and summarized the key files."),
             event(event_id="success-read", timestamp=now - 34_800, category="tool", event_type="tool.complete", title="Success", summary="README.md loaded", status="success", raw_payload={"name": "read_file", "result": "..."}, tool_name="read_file", duration_ms=114, input_value={"path": "README.md"}, output_value="# Agent Inspector"),
             event(event_id="success-search", timestamp=now - 32_100, category="tool", event_type="tool.complete", title="Success", summary="14 matching files", status="success", raw_payload={"name": "search_files", "result_count": 14}, tool_name="search_files", duration_ms=1_800, input_value={"query": "plugin-sdk"}, output_value={"matches": 14}),
+            usage_event(event_id="success-usage", timestamp=now - 23_700, model=model, prompt=80_708, completion=719, calls=8, context_used=32_100, context_percent=6),
             event(event_id="success-response", timestamp=now - 23_600, category="response", event_type="message.complete", title="Complete", summary="Repository inspection complete", status="success", raw_payload={"text": "Repository inspection complete"}, output_value="Repository inspection complete"),
         ],
+        prompt_tokens=20_108,
+        completion_tokens=111,
+        session_total_tokens=81_427,
+        api_calls=3,
+        context_percent=6,
     )
 
     failed = run(
@@ -111,8 +180,14 @@ def build_runs(now: int) -> list[PersistedRun]:
             event(event_id="failed-model", timestamp=now - 82_000, category="model", event_type="message.complete", title="Generation complete", summary="Model generated a plan", status="success", raw_payload={"text": "I will inspect the configuration."}, duration_ms=3_100),
             event(event_id="failed-read", timestamp=now - 79_500, category="tool", event_type="tool.complete", title="Success", summary="config.yaml loaded", status="success", raw_payload={"name": "read_file"}, tool_name="read_file", duration_ms=220, input_value={"path": "config.yaml"}, output_value="plugins.enabled: []"),
             event(event_id="failed-write", timestamp=now - 74_000, category="error", event_type="tool.complete", title="Tool execution failed", summary="Permission denied while writing config.yaml", status="error", raw_payload={"name": "write_file", "error": "Permission denied"}, tool_name="write_file", duration_ms=3_600, input_value={"path": "config.yaml"}, output_value={"error": "Permission denied"}),
+            usage_event(event_id="failed-usage", timestamp=now - 73_900, model=model, prompt=60_600, completion=608, calls=5, context_used=24_800, context_percent=5),
             event(event_id="failed-response", timestamp=now - 73_800, category="response", event_type="message.complete", title="Assistant response failed", summary="The assistant could not complete the requested change", status="error", raw_payload={"error": "tool failure"}),
         ],
+        prompt_tokens=12_400,
+        completion_tokens=96,
+        session_total_tokens=61_208,
+        api_calls=2,
+        context_percent=5,
     )
 
     slow = run(
@@ -128,8 +203,14 @@ def build_runs(now: int) -> list[PersistedRun]:
             event(event_id="slow-model", timestamp=now - 145_000, category="model", event_type="message.complete", title="Generation complete", summary="Model generation finished", status="success", raw_payload={"text": "I analyzed the project structure."}, duration_ms=8_900),
             event(event_id="slow-search", timestamp=now - 136_000, category="tool", event_type="tool.complete", title="Success", summary="Search completed", status="success", raw_payload={"name": "search_files"}, tool_name="search_files", duration_ms=6_200, input_value={"query": "trace"}, output_value={"matches": 42}),
             event(event_id="slow-read", timestamp=now - 129_000, category="tool", event_type="tool.complete", title="Success", summary="Source files loaded", status="success", raw_payload={"name": "read_file"}, tool_name="read_file", duration_ms=2_400, input_value={"path": "src/trace/normalizer.ts"}, output_value="..."),
+            usage_event(event_id="slow-usage", timestamp=now - 120_400, model=model, prompt=48_200, completion=512, calls=3, context_used=48_200, context_percent=9),
             event(event_id="slow-response", timestamp=now - 120_300, category="response", event_type="message.complete", title="Complete", summary="Analysis complete", status="success", raw_payload={"text": "Analysis complete"}),
         ],
+        prompt_tokens=48_200,
+        completion_tokens=512,
+        session_total_tokens=48_712,
+        api_calls=3,
+        context_percent=9,
     )
 
     return [successful, failed, slow]

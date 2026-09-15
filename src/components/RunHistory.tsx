@@ -1,7 +1,7 @@
 import { Badge, EmptyState, ErrorState, SegmentedControl, Skeleton } from '@hermes/plugin-sdk'
 
 import type { RunSummary } from '../api/runs'
-import { displaySessionId, formatMetricDuration, formatTime, runGroupLabel } from '../utils/formatting'
+import { displaySessionId, formatCost, formatMetricDuration, formatTime, formatTokens, runGroupLabel } from '../utils/formatting'
 
 export type RunHistoryState = 'loading' | 'ready' | 'error'
 export type HistoryFilter = 'all' | 'success' | 'error'
@@ -83,11 +83,11 @@ export function RunHistory({ runs, state, error, filter, selectedRunId, onFilter
         </div>
       ) : state === 'loading' ? (
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-          <Skeleton className="h-20 w-full" />
-          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-24 w-full" />
         </div>
       ) : visibleRuns.length ? (
-        <div className="overflow-y-auto rounded-md border border-(--ui-stroke-secondary) bg-background/20 p-2" style={{ maxHeight: '13rem' }}>
+        <div className="overflow-y-auto rounded-md border border-(--ui-stroke-secondary) bg-background/20 p-2" style={{ maxHeight: '15rem' }}>
           <div className="grid gap-3">
             {groups.map(group => (
               <div className="grid gap-1.5" key={group.label}>
@@ -98,7 +98,7 @@ export function RunHistory({ runs, state, error, filter, selectedRunId, onFilter
                       aria-label={`Open run ${displaySessionId(run.sessionId)}`}
                       aria-pressed={run.runId === selectedRunId}
                       className={
-                        'h-20 min-w-0 overflow-hidden rounded-md border px-2.5 py-2 text-left transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 ' +
+                        'h-24 min-w-0 overflow-hidden rounded-md border px-2.5 py-2 text-left transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 ' +
                         (run.runId === selectedRunId
                           ? 'border-primary/50 bg-primary/[0.055]'
                           : 'border-transparent hover:border-(--ui-stroke-secondary) hover:bg-(--ui-bg-tertiary)')
@@ -114,10 +114,12 @@ export function RunHistory({ runs, state, error, filter, selectedRunId, onFilter
                         </time>
                       </div>
                       <div className="mt-1 truncate font-mono text-xs text-foreground" title={run.model || undefined}>{run.model || 'Model not reported'}</div>
-                      <div className="mt-1 flex gap-2 font-mono text-[0.65rem] tabular-nums text-(--ui-text-secondary)">
+                      <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 font-mono text-[0.65rem] tabular-nums text-(--ui-text-secondary)">
                         <span>{formatMetricDuration(run.runtimeMs)}</span>
                         <span>{run.toolCallCount} tools</span>
                         {run.failedToolCount ? <span className="text-destructive">{run.failedToolCount} failure{run.failedToolCount === 1 ? '' : 's'}</span> : null}
+                        {run.totalTokens === null || run.totalTokens === undefined ? null : <span>{formatTokens(run.totalTokens)} tok</span>}
+                        {run.costUsd === null || run.costUsd === undefined ? null : <span>{formatCost(run.costUsd)}</span>}
                       </div>
                     </button>
                   ))}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { createTraceNormalizer } from '../src/trace/normalizer'
+import { createTraceNormalizer } from '../../src/trace/normalizer'
 
 function gatewayEvent(type: string, payload: Record<string, unknown>, session_id = 'session-1') {
   return { type, payload, session_id }

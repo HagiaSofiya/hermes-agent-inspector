@@ -1,5 +1,6 @@
 import type { TraceMetrics } from '../trace/types'
-import { formatMetricDuration } from '../utils/formatting'
+import { formatCost, formatMetricDuration, formatTokens } from '../utils/formatting'
+import { ContextGauge } from './ContextGauge'
 
 function MetricBlock({ label, value, detail, mono = false, wide = false }: { label: string; value: string; detail?: string; mono?: boolean; wide?: boolean }) {
   return (
@@ -13,19 +14,27 @@ function MetricBlock({ label, value, detail, mono = false, wide = false }: { lab
   )
 }
 
-export function TraceMetricsSummary({ metrics }: { metrics: TraceMetrics }) {
+export function TraceMetricsSummary({ metrics, costUsd }: { metrics: TraceMetrics; costUsd: number | null }) {
   const slowestLabel = metrics.slowestTool ? metrics.slowestTool.toolName : '—'
   const slowestDuration = metrics.slowestTool ? formatMetricDuration(metrics.slowestTool.durationMs) : undefined
+  const usage = metrics.usage
+  // The session total is the context the run figure needs: it says how much of
+  // the session's lifetime spend this one run accounts for.
+  const sessionDetail =
+    usage && usage.sessionTotalTokens !== null ? 'session ' + formatTokens(usage.sessionTotalTokens) : undefined
 
   return (
-    <section aria-label="Execution metrics" className="grid grid-cols-2 gap-1.5 sm:grid-cols-4 lg:grid-cols-7">
+    <section aria-label="Execution metrics" className="grid grid-cols-2 gap-1.5 sm:grid-cols-4 lg:grid-cols-6">
       <MetricBlock label="Runtime" mono value={formatMetricDuration(metrics.totalExecutionDurationMs)} detail={metrics.isActive ? 'active' : 'from trace'} />
+      <MetricBlock label="Tokens" mono value={formatTokens(usage?.runTotalTokens)} detail={sessionDetail} />
+      <MetricBlock label="Cost" mono value={formatCost(costUsd)} detail={costUsd === null ? undefined : 'est.'} />
       <MetricBlock label="Tool calls" mono value={String(metrics.totalToolCalls)} />
       <MetricBlock label="Successful" mono value={String(metrics.successfulToolCalls)} />
       <MetricBlock label="Failed" mono value={String(metrics.failedToolCalls)} />
       <MetricBlock label="Avg tool" mono value={formatMetricDuration(metrics.averageToolDurationMs)} />
       <MetricBlock label="Slowest tool" mono value={slowestLabel} detail={slowestDuration} />
-      <MetricBlock label="Model generation" mono value={formatMetricDuration(metrics.modelGenerationDurationMs)} wide />
+      <MetricBlock label="Model generation" mono value={formatMetricDuration(metrics.modelGenerationDurationMs)} />
+      <ContextGauge usage={usage} />
     </section>
   )
 }
